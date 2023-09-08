@@ -36,10 +36,10 @@ import java.util.Arrays;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TAG = "AsconExample";
+    private static final String TAG = "KeystoreBc";
     TextView textViewConsole, runtimeWarning;
     String consoleText = "";
-    String APPTITLE = "Ascon Encryption Example";
+    String APPTITLE = "Keystore BC";
     Context contextSave;
     AutoCompleteTextView chooseAlgorithm;
     String choiceString;
@@ -59,6 +59,7 @@ public class MainActivity extends AppCompatActivity {
         runtimeWarning = findViewById(R.id.tvMainWarningEn);
 
         String[] type = new String[]{"choose an algorithm to run",
+                "SymmetricKeys",
                 "Ascon128v12",
                 "Ascon128av12",
         };
@@ -76,6 +77,20 @@ public class MainActivity extends AppCompatActivity {
                 String choiceString = chooseAlgorithm.getText().toString();
                 runtimeWarning.setVisibility(View.GONE);
                 switch (choiceString) {
+
+                    case "SymmetricKeys": {
+                        printlnX("\n* Symmetric keys *\n");
+                        printlnX("\nrunning on " + getAndroidVersion());
+                        printlnX("all values are in string or hex encoding\n");
+
+                        printlnX("create a keystore\n");
+                        KeystoreBc keystoreBc = new KeystoreBc(view.getContext());
+                        char[] passphrase = "123456".toCharArray();
+                        keystoreBc.initialize(passphrase);
+
+
+                        break;
+                    }
 
                     case "Ascon128v12": {
                         clearConsole();

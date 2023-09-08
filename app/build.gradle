@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId "de.androidcrypto.keystorebc"
-        minSdk 21
+        minSdk 23
         targetSdk 33
         versionCode 1
         versionName "1.0"
@@ -40,4 +40,6 @@ dependencies {
     // https://mvnrepository.com/artifact/org.bouncycastle/bcprov-jdk18on
     implementation group: 'org.bouncycastle', name: 'bcprov-jdk18on', version: '1.72'
 
+    // for encrypted shared preferences
+    implementation 'androidx.security:security-crypto:1.0.0'
 }
