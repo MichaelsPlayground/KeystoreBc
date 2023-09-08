@@ -1,4 +1,4 @@
-package de.androidcrypto.asconencryptionbc;
+package de.androidcrypto.keystorebc;
 
 import android.app.Activity;
 import android.content.Context;
@@ -25,24 +25,16 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 
-import org.bouncycastle.asn1.x9.ECNamedCurveTable;
-import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 import java.security.Provider;
 import java.security.Security;
-import java.security.spec.ECGenParameterSpec;
 import java.util.Arrays;
 
-public class MainActivityEcSecp224r1 extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "AsconExample";
     TextView textViewConsole, runtimeWarning;
@@ -87,46 +79,6 @@ public class MainActivityEcSecp224r1 extends AppCompatActivity {
 
                     case "Ascon128v12": {
                         clearConsole();
-                        initBouncyCastle();
-
-                        String publicKeyNxp = "0x040E98E117AAA36457F43173DC920A8757267F44CE4EC5ADD3C54075571AEBBF7B942A9774A1D94AD02572427E5AE0A2DD36591B1FB34FCF3D";
-                        String tagSignatureString = "1CA298FC3F0F04A329254AC0DF7A3EB8E756C076CD1BAAF47B8BBA6DCD78BCC64DFD3E80E679D9A663CAE9E4D4C2C77023077CC549CE4A61";
-                        String tagIdString = "045A115A346180";
-                        byte[] tagSignatureByte = hexStringToByteArray(tagSignatureString);
-                        byte[] tagIdByte = hexStringToByteArray(tagIdString);
-
-
-
-                        KeyPairGenerator kpg = null;
-                        KeyPair keyPair;
-                        String name = "SECP224R1";
-                        try {
-                            kpg = KeyPairGenerator.getInstance("ECDSA", BouncyCastleProvider.PROVIDER_NAME);
-                            kpg.initialize(new ECGenParameterSpec(name));
-                            keyPair = kpg.generateKeyPair();
-                        } catch (NoSuchAlgorithmException e) {
-                            throw new RuntimeException(e);
-                        } catch (NoSuchProviderException e) {
-                            throw new RuntimeException(e);
-                        } catch (InvalidAlgorithmParameterException e) {
-                            throw new RuntimeException(e);
-                        }
-
-                        printlnX("private key: "+ keyPair.getPrivate().toString());
-                        X9ECParameters params = ECNamedCurveTable.getByName(name);
-                        printlnX("params.getCurve.getA: " + params.getCurve().getA().toBigInteger());
-                        printlnX("params.getCurve.getB: " + params.getCurve().getB().toBigInteger());
-                        printlnX("params.getCurve.getCoFactor: " + params.getCurve().getCofactor());
-                        //final BigInteger p = ((ECFieldFp) params.getCurve().getField()).getP();
-                        //printlnX("params.getCurve.getP: " + p);
-                        System.out.println("params.getCurve.getA: " + params.getCurve().getA().toBigInteger());
-                        System.out.println("params.getCurve.getB: " + params.getCurve().getB().toBigInteger());
-                        System.out.println("params.getCurve.getOrder: " + params.getCurve().getOrder());
-                        System.out.println("params.getCurve.getX: " + params.getBaseEntry().getPoint().getXCoord().toBigInteger());
-                        System.out.println("params.getCurve.getY: " + params.getBaseEntry().getPoint().getYCoord().toBigInteger());
-
-
-                        if (choiceString.equals("Ascon128v12")) return;
 
                         printlnX("\n* ASCON128v12 AEAD authenticated encryption *\n");
                         printlnX("\nrunning on " + getAndroidVersion());
@@ -243,16 +195,6 @@ public class MainActivityEcSecp224r1 extends AppCompatActivity {
         });
     }
 
-    public static byte[] hexStringToByteArray(String s) {
-        int len = s.length();
-        byte[] data = new byte[len / 2];
-        for (int i = 0; i < len; i += 2) {
-            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
-                    + Character.digit(s.charAt(i + 1), 16));
-        }
-        return data;
-    }
-
     private byte[] ascon128v12Encryption(@NonNull byte[] key, @NonNull byte[] nonce, @NonNull byte[] plaintext, byte[] additionalData) {
         // sanity checks
         if (key.length != 16) {
@@ -361,7 +303,7 @@ public class MainActivityEcSecp224r1 extends AppCompatActivity {
     public void clearConsole() {
         consoleText = "";
         textViewConsole.setText(consoleText);
-        MainActivityEcSecp224r1.this.setTitle(APPTITLE);
+        MainActivity.this.setTitle(APPTITLE);
     }
 
     public void printlnX(String print) {

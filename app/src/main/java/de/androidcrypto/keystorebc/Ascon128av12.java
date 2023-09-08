@@ -1,13 +1,14 @@
-package de.androidcrypto.asconencryptionbc;
+package de.androidcrypto.keystorebc;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 /**
- * source: https://github.com/ascon/javaascon/blob/master/src/iaik/ascon128v12/Ascon128v12.java
+ * source: https://github.com/ascon/javaascon/blob/master/src/iaik/ascon128av12/Ascon128av12.java
  */
 
-public class Ascon128v12 {
+public class Ascon128av12 {
+
     // Defines
     public final static int CRYPTO_KEYBYTES = 16;
     public final static int CRYPTO_NSECBYTES = 0;
@@ -88,10 +89,10 @@ public class Ascon128v12 {
 
         int klen = CRYPTO_KEYBYTES;
         int size = 320 / 8;
-        int capacity = 2 * klen;
-        int rate = size - capacity;
+        int rate = 128 / 8;
+        int capacity = size - rate;
         int a = 12;
-        int b = 6;
+        int b = 8;
         long s = adlen / rate + 1;
         long t = mlen / rate + 1;
         long l = mlen % rate;
@@ -115,21 +116,22 @@ public class Ascon128v12 {
             M[i] = 0;
 
         // initialization
+        int irate = 64 / 8;
         S[0] = (byte) (klen * 8);
         S[1] = (byte) (rate * 8);
         S[2] = (byte) a;
         S[3] = (byte) b;
-        for (i = 4; i < rate; ++i)
+        for (i = 4; i < irate; ++i)
             S[i] = 0;
         for (i = 0; i < klen; ++i)
-            S[rate + i] = k[i];
+            S[irate + i] = k[i];
         for (i = 0; i < klen; ++i)
-            S[rate + klen + i] = npub[i];
+            S[irate + klen + i] = npub[i];
 
         if (PRINTSTATE) print("initial value:\n", S, size, 0);
         permutation(S, a);
         for (i = 0; i < klen; ++i)
-            S[rate + klen + i] ^= k[i];
+            S[irate + klen + i] ^= k[i];
         if (PRINTSTATE) print("initialization:\n", S, size, 0);
 
         // process associated data
@@ -162,12 +164,12 @@ public class Ascon128v12 {
             S[rate + i] ^= k[i];
         permutation(S, a);
         for (i = 0; i < klen; ++i)
-            S[rate + klen + i] ^= k[i];
+            S[irate + klen + i] ^= k[i];
         if (PRINTSTATE) print("finalization:\n", S, size, 0);
 
         // return tag
         for (i = 0; i < klen; ++i)
-            c[mlen + i] = S[rate + klen + i];
+            c[mlen + i] = S[irate + klen + i];
         clen = mlen + klen;
 
         return clen;
@@ -182,10 +184,10 @@ public class Ascon128v12 {
 
         int klen = CRYPTO_KEYBYTES;
         int size = 320 / 8;
-        int capacity = 2 * klen;
-        int rate = size - capacity;
+        int rate = 128 / 8;
+        int capacity = size - rate;
         int a = 12;
-        int b = (klen == 16) ? 6 : 8;
+        int b = 8;
         int s = adlen / rate + 1;
         int t = (clen - klen) / rate + 1;
         int l = (clen - klen) % rate;
@@ -203,19 +205,20 @@ public class Ascon128v12 {
             A[i] = 0;
 
         // initialization
+        int irate = 64 / 8;
         S[0] = (byte) (klen * 8);
         S[1] = (byte) (rate * 8);
         S[2] = (byte) a;
         S[3] = (byte) b;
-        for (i = 4; i < rate; ++i)
+        for (i = 4; i < irate; ++i)
             S[i] = 0;
         for (i = 0; i < klen; ++i)
-            S[rate + i] = k[i];
+            S[irate + i] = k[i];
         for (i = 0; i < klen; ++i)
-            S[rate + klen + i] = npub[i];
+            S[irate + klen + i] = npub[i];
         permutation(S, a);
         for (i = 0; i < klen; ++i)
-            S[rate + klen + i] ^= k[i];
+            S[irate + klen + i] ^= k[i];
 
         // process associated data
         if (adlen != 0) {
@@ -246,11 +249,11 @@ public class Ascon128v12 {
             S[rate + i] ^= k[i];
         permutation(S, a);
         for (i = 0; i < klen; ++i)
-            S[rate + klen + i] ^= k[i];
+            S[irate + klen + i] ^= k[i];
 
         // return -1 if verification fails
         for (i = 0; i < klen; ++i)
-            if (c[clen - klen + i] != S[rate + klen + i])
+            if (c[clen - klen + i] != S[irate + klen + i])
                 return -1;
 
         // return plaintext

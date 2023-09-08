@@ -1,4 +1,4 @@
-package de.androidcrypto.asconencryptionbc;
+package de.androidcrypto.keystorebc;
 
 import android.app.Activity;
 import android.content.Context;

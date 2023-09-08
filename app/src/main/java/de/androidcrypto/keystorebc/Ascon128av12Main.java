@@ -1,4 +1,4 @@
-package de.androidcrypto.asconencryptionbc;
+package de.androidcrypto.keystorebc;
 
 // Implementation of Ascon-128a v1.2, an authenticated cipher
 // http://ascon.iaik.tugraz.at/

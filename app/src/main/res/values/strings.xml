@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">AsconEncryptionBc</string>
+    <string name="app_name">Keystore Bc</string>
     <string name="consoleTitle"><b>Console</b></string>
     <string name="btnRunCodeText">run your code</string>
     <string name="btnClearConsoleText">clear console</string>
