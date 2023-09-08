@@ -86,9 +86,22 @@ public class MainActivity extends AppCompatActivity {
                         printlnX("create a keystore\n");
                         KeystoreBc keystoreBc = new KeystoreBc(view.getContext());
                         char[] passphrase = "123456".toCharArray();
-                        keystoreBc.initialize(passphrase);
+                        // initialize only when not done before
+                        if (!keystoreBc.isLibraryInitialized()) {
+                            keystoreBc.initialize(passphrase);
+                        }
 
-
+                        byte[] symmetricKey = "1234567890123456".getBytes(StandardCharsets.UTF_8);
+                        byte keyNumber = (byte) 0x01;
+                        boolean success = keystoreBc.storeSymmetricKey(keyNumber, symmetricKey);
+                        Log.d(TAG, "store key: " + success);
+                        if (!success) return;
+                        byte[] symmetricKeyLoad = keystoreBc.readSymmetricKey(keyNumber);
+                        if (Arrays.equals(symmetricKey, symmetricKeyLoad)) {
+                            Log.d(TAG, "write and read symmetric keys are equals");
+                        } else {
+                            Log.d(TAG, "write and read symmetric keys are NPT equals");
+                        }
                         break;
                     }
 

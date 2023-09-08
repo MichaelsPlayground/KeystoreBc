@@ -8,10 +8,12 @@ import android.text.TextUtils;
 import android.util.Base64;
 import android.util.Log;
 
+import androidx.annotation.RequiresApi;
 import androidx.security.crypto.EncryptedSharedPreferences;
 import androidx.security.crypto.MasterKeys;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -23,9 +25,14 @@ import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.KeySpec;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.List;
 
+import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
 
 public class KeystoreBc {
 
@@ -35,6 +42,7 @@ public class KeystoreBc {
     private char[] keystorePassword;
     private byte[] keystorePasswordBytes;
     private final String PBKDF2_ALGORITHM = "PBKDF2WithHmacSHA1";
+    private final int PBKDF2_NUMBER_ITERATIONS_DEFAULT = 10000;
     private int PBKDF2_NUMBER_ITERATIONS = 10000;
     private byte[] PBKDF2_SALT_BYTES;
     private final int PBKDF2_KEY_LENGTH = 256;
@@ -73,6 +81,7 @@ public class KeystoreBc {
     private String lastErrorMessage = "";
 
     public KeystoreBc(Context context) {
+        Log.d(TAG, "instantiate KeystoreBc class");
         lastErrorMessage = "";
         this.context = context;
         // this is a hardcoded check to prevent on working when Android SDK is < M = 23
@@ -82,10 +91,15 @@ public class KeystoreBc {
             isAndroidSdkVersionTooLow = true;
             return;
         }
+
+        sharedPreferences = context.getSharedPreferences(UNENCRYPTED_PREFERENCES_FILENAME, Context.MODE_PRIVATE);
         // check that sharedPreferences had been stored in a previous run
-        if (!isUnencryptedDataAvailable) {
+        if (!checkIsUnencryptedDataAvailable()) {
             // store the parameter
+            Log.d(TAG, "unencrypted data is not available, generating");
             try {
+                generateRandomSalt();
+                PBKDF2_NUMBER_ITERATIONS = PBKDF2_NUMBER_ITERATIONS_DEFAULT;
                 sharedPreferences.edit().putInt(PBKDF2_ITERATIONS, PBKDF2_NUMBER_ITERATIONS).apply();
                 sharedPreferences.edit().putString(PBKDF2_SALT, base64Encoding(PBKDF2_SALT_BYTES)).apply();
             } catch (Exception e) {
@@ -94,8 +108,6 @@ public class KeystoreBc {
                 return;
             }
         }
-
-        sharedPreferences = context.getSharedPreferences(UNENCRYPTED_PREFERENCES_FILENAME, Context.MODE_PRIVATE);
 
         // encrypted shared preferences
         // Although you can define your own key generation parameter specification, it's
@@ -139,6 +151,7 @@ public class KeystoreBc {
     }
 
     public boolean initialize(char[] passphrase) {
+        Log.d(TAG, "initialize the class");
         lastErrorMessage = "";
         if (isAndroidSdkVersionTooLow) {
             Log.e(TAG, "The minimum Android SDK version is below 23 (M), aborted");
@@ -146,9 +159,9 @@ public class KeystoreBc {
             return false;
         }
         try {
-            SecureRandom secureRandom = new SecureRandom();
-            PBKDF2_SALT_BYTES = new byte[32];
-            secureRandom.nextBytes(PBKDF2_SALT_BYTES);
+            if (!isUnencryptedDataAvailable) {
+                generateRandomSalt();
+            }
             SecretKeyFactory secretKeyFactory = null;
             secretKeyFactory = SecretKeyFactory.getInstance(PBKDF2_ALGORITHM);
             System.out.println("*** PBKDF2_NUMBER_ITERATIONS: " + PBKDF2_NUMBER_ITERATIONS);
@@ -227,6 +240,13 @@ public class KeystoreBc {
         keystorePassword = convertByteArrayToCharArray(keystorePasswordBytes);
         isLibraryInitialized = true;
         lastErrorMessage = "library is initialized, the derived keystore password is restored";
+        return true;
+    }
+
+    private boolean generateRandomSalt() {
+        SecureRandom secureRandom = new SecureRandom();
+        PBKDF2_SALT_BYTES = new byte[32];
+        secureRandom.nextBytes(PBKDF2_SALT_BYTES);
         return true;
     }
 
@@ -311,6 +331,157 @@ public class KeystoreBc {
         }
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    public boolean storeSymmetricKey(byte keyNumber, byte[] key) {
+        if (isAndroidSdkVersionTooLow) {
+            Log.e(TAG, "The minimum Android SDK version is below 23 (M), aborted");
+            lastErrorMessage = "The minimum Android SDK version is below 23 (M), aborted";
+            return false;
+        }
+        // sanity checks on keys
+        if (key == null) {
+            Log.e(TAG, "key is NULL, aborted");
+            lastErrorMessage = "key is NULL, aborted";
+            return false;
+        }
+        if ((key.length != 8) && (key.length != 16)) {
+            Log.e(TAG, "key length is not 8 or 16, aborted");
+            lastErrorMessage = "key length is not 8 or 16, aborted";
+            return false;
+        }
+        if (key.length == 16) isKeyAes = true;
+        // build alias name
+        StringBuilder sb = new StringBuilder();
+        sb.append(keyAlias);
+        sb.append(keyNumber);
+        String alias = sb.toString();
+        Log.d(TAG, "alias: " + alias);
+        boolean keystorePasswordAvailable = getKeystorePasswordBytes();
+        if (!keystorePasswordAvailable) {
+            Log.e(TAG, "No keystorePassword present, aborted: " + keystoreFileName);
+            lastErrorMessage = "No keystorePassword present, aborted: " + keystoreFileName;
+            return false;
+        }
+        if (!isFilePresent(keystoreFileName)) {
+            Log.e(TAG, "No keystoreFile present, aborted: " + keystoreFileName);
+            lastErrorMessage = "No keystoreFile present, aborted: " + keystoreFileName;
+            return false;
+        }
+        try {
+            SecretKey secretKey;
+            if (isKeyAes) {
+                secretKey = new SecretKeySpec(key, "AES");
+            } else {
+                secretKey = new SecretKeySpec(key, "DES");
+            }
+            KeyStore keyStore = KeyStore.getInstance(keystoreType);
+            FileInputStream fileInputStream = context.openFileInput(keystoreFileName);
+            keyStore.load(fileInputStream, keystorePassword);
+
+            if (keyStore.containsAlias(alias)) {
+                Log.d(TAG, "alias is present in keyStore, overwritten: " + alias);
+            }
+            //Creating the KeyStore.ProtectionParameter object
+            KeyStore.ProtectionParameter protectionParam = new KeyStore.PasswordProtection(keystorePassword);
+            //Creating SecretKeyEntry object
+            KeyStore.SecretKeyEntry secretKeyEntry = new KeyStore.SecretKeyEntry(secretKey);
+            keyStore.setEntry(alias, secretKeyEntry, protectionParam);
+            Log.d(TAG, "key is stored");
+            FileOutputStream fos = context.openFileOutput(keystoreFileName, Context.MODE_PRIVATE);
+            keyStore.store(fos, keystorePassword);
+            lastErrorMessage = "key is stored";
+            return true;
+        } catch (IOException | GeneralSecurityException e) {
+            Log.e(TAG, "Exception on keystore usage, aborted");
+            Log.e(TAG, "Exception: " + e.getMessage());
+            lastErrorMessage = "Exception: " + e.getMessage();
+            return false;
+        }
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    public byte[] readSymmetricKey(byte keyNumber) {
+        if (isAndroidSdkVersionTooLow) {
+            Log.e(TAG, "The minimum Android SDK version is below 23 (M), aborted");
+            lastErrorMessage = "The minimum Android SDK version is below 23 (M), aborted";
+            return null;
+        }
+        Log.d(TAG, "readKey");
+        // build alias name
+        StringBuilder sb = new StringBuilder();
+        sb.append(keyAlias);
+        sb.append(keyNumber);
+        String alias = sb.toString();
+        Log.d(TAG, "readKey, alias: " + alias);
+        boolean keystorePasswordAvailable = getKeystorePasswordBytes();
+        if (!keystorePasswordAvailable) {
+            Log.e(TAG, "No keystorePassword present, aborted: " + keystoreFileName);
+            lastErrorMessage = "No keystorePassword present, aborted: " + keystoreFileName;
+            return null;
+        }
+        if (!isFilePresent(keystoreFileName)) {
+            Log.d(TAG, "No keystoreFile present, aborted: " + keystoreFileName);
+            lastErrorMessage = "No keystoreFile present, aborted: " + keystoreFileName;
+            return null;
+        } else {
+            try {
+                KeyStore keyStore = KeyStore.getInstance(keystoreType);
+                FileInputStream fileInputStream = context.openFileInput(keystoreFileName);
+                keyStore.load(fileInputStream, keystorePassword);
+                //Creating the KeyStore.ProtectionParameter object
+                KeyStore.ProtectionParameter protectionParam = new KeyStore.PasswordProtection(keystorePassword);
+                // Creating the KeyStore.SecretKeyEntry object
+                KeyStore.SecretKeyEntry secretKeyEnt = (KeyStore.SecretKeyEntry) keyStore.getEntry(alias, protectionParam);
+                // Creating SecretKey object
+                if (secretKeyEnt == null) {
+                    Log.e(TAG, "no entry found, aborted");
+                    lastErrorMessage = "no entry found, aborted";
+                    return null;
+                }
+                SecretKey secretKey = secretKeyEnt.getSecretKey();
+                Log.d(TAG, "Algorithm used to generate key : " + secretKey.getAlgorithm());
+                byte[] retrievedKey = secretKey.getEncoded();
+                lastErrorMessage = "success";
+                return retrievedKey;
+            } catch (IOException | GeneralSecurityException e) {
+                Log.e(TAG, "Exception on keystore usage, aborted");
+                Log.e(TAG, "Exception: " + e.getMessage());
+                lastErrorMessage = "Exception: " + e.getMessage();
+                return null;
+            }
+        }
+    }
+
+    public List<String> getKeystoreAliases() {
+        Log.d(TAG, "getKeystoreAliases");
+        if (!isFilePresent(keystoreFileName)) {
+            Log.d(TAG, "No keystoreFile present, aborted: " + keystoreFileName);
+            return null;
+        } else {
+            try {
+                KeyStore keyStore = KeyStore.getInstance(keystoreType);
+                FileInputStream fileInputStream = context.openFileInput(keystoreFileName);
+                keyStore.load(fileInputStream, keystorePassword);
+
+                Enumeration<String> aliases = keyStore.aliases();
+                List<String> list = new ArrayList<>();
+                while (aliases.hasMoreElements()) {
+                    String ne = aliases.nextElement();
+                    list.add(ne);
+                }
+                Log.d(TAG, "list has entries: " + list.size());
+                lastErrorMessage = "success, list has entries: " + list.size();
+                return list;
+            } catch (IOException | GeneralSecurityException e) {
+                Log.e(TAG, "Exception on keystore usage, aborted");
+                Log.e(TAG, "Exception: " + e.getMessage());
+                lastErrorMessage = "Exception: " + e.getMessage();
+                return null;
+            }
+        }
+    }
+
+
     /**
      * section for files
      */
@@ -355,4 +526,11 @@ public class KeystoreBc {
         return b;
     }
 
+    /**
+     * section for getter
+     */
+
+    public boolean isLibraryInitialized() {
+        return isLibraryInitialized;
+    }
 }
