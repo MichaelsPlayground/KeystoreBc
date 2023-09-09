@@ -12,20 +12,41 @@ import androidx.annotation.RequiresApi;
 import androidx.security.crypto.EncryptedSharedPreferences;
 import androidx.security.crypto.MasterKeys;
 
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x500.style.RFC4519Style;
+import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.cert.CertIOException;
+import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.security.GeneralSecurityException;
+import java.security.KeyPair;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.KeySpec;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
 
@@ -46,7 +67,8 @@ public class KeystoreBc {
     private int PBKDF2_NUMBER_ITERATIONS = 10000;
     private byte[] PBKDF2_SALT_BYTES;
     private final int PBKDF2_KEY_LENGTH = 256;
-    private final String keyAlias = "key_";
+    private final String symmetricKeyAlias = "skey_";
+    private final String aymmetricKeyAlias = "akey_";
     private boolean isKeyAes = false;
 
 
@@ -134,13 +156,7 @@ public class KeystoreBc {
             lastErrorMessage = "Exception: " + e.getMessage();
             return;
         }
-        // generate keystore file
-        if (!isFilePresent(keystoreFileName)) {
-            boolean crSuc = createKeyStore();
-            Log.d(TAG, "create keystore success ? : " + crSuc);
-        }
         checkIsLibraryInitialized();
-        Log.d(TAG, "initialized");
         if (isLibraryInitialized) {
             Log.d(TAG, "initialized");
             lastErrorMessage = "initialized";
@@ -189,6 +205,19 @@ public class KeystoreBc {
                 .apply();
         //keystorePassword = bytesToChars(keystorePasswordBytes);
         keystorePassword = convertByteArrayToCharArray(keystorePasswordBytes);
+
+        // generate keystore file
+        if (!isFilePresent(keystoreFileName)) {
+            boolean crSuc = createKeyStore();
+            Log.d(TAG, "create keystore success ? : " + crSuc);
+            if (!crSuc) {
+                Log.e(TAG, "could not create a keystore, aborted");
+                return false;
+            } else {
+                Log.d(TAG, "new keystore created");
+            }
+        }
+
         isLibraryInitialized = true;
         lastErrorMessage = "library is initialized";
         return true;
@@ -333,6 +362,7 @@ public class KeystoreBc {
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     public boolean storeSymmetricKey(byte keyNumber, byte[] key) {
+        Log.d(TAG, "storeSymmetricKey");
         if (isAndroidSdkVersionTooLow) {
             Log.e(TAG, "The minimum Android SDK version is below 23 (M), aborted");
             lastErrorMessage = "The minimum Android SDK version is below 23 (M), aborted";
@@ -352,7 +382,7 @@ public class KeystoreBc {
         if (key.length == 16) isKeyAes = true;
         // build alias name
         StringBuilder sb = new StringBuilder();
-        sb.append(keyAlias);
+        sb.append(symmetricKeyAlias);
         sb.append(keyNumber);
         String alias = sb.toString();
         Log.d(TAG, "alias: " + alias);
@@ -374,7 +404,7 @@ public class KeystoreBc {
             } else {
                 secretKey = new SecretKeySpec(key, "DES");
             }
-            KeyStore keyStore = KeyStore.getInstance(keystoreType);
+            KeyStore keyStore = KeyStore.getInstance(keystoreType, "BC");
             FileInputStream fileInputStream = context.openFileInput(keystoreFileName);
             keyStore.load(fileInputStream, keystorePassword);
 
@@ -389,7 +419,7 @@ public class KeystoreBc {
             Log.d(TAG, "key is stored");
             FileOutputStream fos = context.openFileOutput(keystoreFileName, Context.MODE_PRIVATE);
             keyStore.store(fos, keystorePassword);
-            lastErrorMessage = "key is stored";
+            lastErrorMessage = "symmetric key is stored";
             return true;
         } catch (IOException | GeneralSecurityException e) {
             Log.e(TAG, "Exception on keystore usage, aborted");
@@ -401,15 +431,15 @@ public class KeystoreBc {
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     public byte[] readSymmetricKey(byte keyNumber) {
+        Log.d(TAG, "readSymmetricKey");
         if (isAndroidSdkVersionTooLow) {
             Log.e(TAG, "The minimum Android SDK version is below 23 (M), aborted");
             lastErrorMessage = "The minimum Android SDK version is below 23 (M), aborted";
             return null;
         }
-        Log.d(TAG, "readKey");
         // build alias name
         StringBuilder sb = new StringBuilder();
-        sb.append(keyAlias);
+        sb.append(symmetricKeyAlias);
         sb.append(keyNumber);
         String alias = sb.toString();
         Log.d(TAG, "readKey, alias: " + alias);
@@ -425,7 +455,7 @@ public class KeystoreBc {
             return null;
         } else {
             try {
-                KeyStore keyStore = KeyStore.getInstance(keystoreType);
+                KeyStore keyStore = KeyStore.getInstance(keystoreType, "BC");
                 FileInputStream fileInputStream = context.openFileInput(keystoreFileName);
                 keyStore.load(fileInputStream, keystorePassword);
                 //Creating the KeyStore.ProtectionParameter object
@@ -459,7 +489,7 @@ public class KeystoreBc {
             return null;
         } else {
             try {
-                KeyStore keyStore = KeyStore.getInstance(keystoreType);
+                KeyStore keyStore = KeyStore.getInstance(keystoreType, "BC");
                 FileInputStream fileInputStream = context.openFileInput(keystoreFileName);
                 keyStore.load(fileInputStream, keystorePassword);
 
@@ -481,6 +511,240 @@ public class KeystoreBc {
         }
     }
 
+    /**
+     * section for asymmetric key handling
+     */
+
+    public boolean storeAsymmetricKeyEcdsa(byte keyNumber, KeyPair keyPair) {
+        Log.d(TAG, "storeAsymmetricKey (ECDSA)");
+        if (isAndroidSdkVersionTooLow) {
+            Log.e(TAG, "The minimum Android SDK version is below 23 (M), aborted");
+            lastErrorMessage = "The minimum Android SDK version is below 23 (M), aborted";
+            return false;
+        }
+        // sanity checks on keys
+        if (keyPair == null) {
+            Log.e(TAG, "keyPair is NULL, aborted");
+            lastErrorMessage = "keyPair is NULL, aborted";
+            return false;
+        }
+        if (!keyPair.getPrivate().getAlgorithm().contains("EC")) {
+            Log.e(TAG, "keyPair algorithm is not EC, aborted");
+            lastErrorMessage = "keyPair algorithm is not EC, aborted";
+            return false;
+        }
+        // build alias name
+        StringBuilder sb = new StringBuilder();
+        sb.append(aymmetricKeyAlias);
+        sb.append(keyNumber);
+        String alias = sb.toString();
+        Log.d(TAG, "alias: " + alias);
+        boolean keystorePasswordAvailable = getKeystorePasswordBytes();
+        if (!keystorePasswordAvailable) {
+            Log.e(TAG, "No keystorePassword present, aborted: " + keystoreFileName);
+            lastErrorMessage = "No keystorePassword present, aborted: " + keystoreFileName;
+            return false;
+        }
+        if (!isFilePresent(keystoreFileName)) {
+            Log.e(TAG, "No keystoreFile present, aborted: " + keystoreFileName);
+            lastErrorMessage = "No keystoreFile present, aborted: " + keystoreFileName;
+            return false;
+        }
+        try {
+            KeyStore keyStore = KeyStore.getInstance(keystoreType, "BC");
+            FileInputStream fileInputStream = context.openFileInput(keystoreFileName);
+            keyStore.load(fileInputStream, keystorePassword);
+            if (keyStore.containsAlias(alias)) {
+                Log.d(TAG, "alias is present in keyStore, overwritten: " + alias);
+            }
+
+            // get the certificate
+            X509Certificate x509Certificate;
+            try {
+                x509Certificate = generateX509CertificateEcdsa(keyPair);
+            } catch (Exception e) {
+                Log.e(TAG, "could not generate a self signed certificate, aborted");
+                Log.e(TAG, e.getMessage());
+                return false;
+            }
+            final KeyStore.PrivateKeyEntry privateKey =
+                    new KeyStore.PrivateKeyEntry(
+                            keyPair.getPrivate(),
+                            new X509Certificate[]{x509Certificate});
+            final KeyStore.ProtectionParameter privateKeyPassword =
+                    new KeyStore.PasswordProtection(keystorePassword);
+            // Add asymmetric key to keystore
+            keyStore.setEntry(alias, privateKey, privateKeyPassword);
+            Log.d(TAG, "key is stored");
+            FileOutputStream fos = context.openFileOutput(keystoreFileName, Context.MODE_PRIVATE);
+            keyStore.store(fos, keystorePassword);
+            lastErrorMessage = "asymmetric key is stored";
+            return true;
+        } catch (IOException | GeneralSecurityException e) {
+            Log.e(TAG, "Exception on keystore usage, aborted");
+            Log.e(TAG, "Exception: " + e.getMessage());
+            lastErrorMessage = "Exception: " + e.getMessage();
+            return false;
+        }
+    }
+
+    public byte[] readPrivateAsymmetricKeyEcdsa(byte keyNumber) {
+        Log.d(TAG, "readPrivateAsymmetricKey (ECDSA)");
+        if (isAndroidSdkVersionTooLow) {
+            Log.e(TAG, "The minimum Android SDK version is below 23 (M), aborted");
+            lastErrorMessage = "The minimum Android SDK version is below 23 (M), aborted";
+            return null;
+        }
+        // build alias name
+        StringBuilder sb = new StringBuilder();
+        sb.append(aymmetricKeyAlias);
+        sb.append(keyNumber);
+        String alias = sb.toString();
+        Log.d(TAG, "readKey, alias: " + alias);
+        boolean keystorePasswordAvailable = getKeystorePasswordBytes();
+        if (!keystorePasswordAvailable) {
+            Log.e(TAG, "No keystorePassword present, aborted: " + keystoreFileName);
+            lastErrorMessage = "No keystorePassword present, aborted: " + keystoreFileName;
+            return null;
+        }
+        if (!isFilePresent(keystoreFileName)) {
+            Log.d(TAG, "No keystoreFile present, aborted: " + keystoreFileName);
+            lastErrorMessage = "No keystoreFile present, aborted: " + keystoreFileName;
+            return null;
+        } else {
+            try {
+                KeyStore keyStore = KeyStore.getInstance(keystoreType, "BC");
+                FileInputStream fileInputStream = context.openFileInput(keystoreFileName);
+                keyStore.load(fileInputStream, keystorePassword);
+                //Creating the KeyStore.ProtectionParameter object
+                KeyStore.ProtectionParameter protectionParam = new KeyStore.PasswordProtection(keystorePassword);
+                KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry(alias, protectionParam);
+                // Creating SecretKey object
+                if (privateKeyEntry == null) {
+                    Log.e(TAG, "no entry found, aborted");
+                    lastErrorMessage = "no entry found, aborted";
+                    return null;
+                }
+                PrivateKey privateKey = privateKeyEntry.getPrivateKey();
+                Log.d(TAG, "Algorithm used to generate key : " + privateKey.getAlgorithm());
+                byte[] retrievedKey = privateKey.getEncoded();
+                lastErrorMessage = "success";
+                return retrievedKey;
+            } catch (IOException | GeneralSecurityException e) {
+                Log.e(TAG, "Exception on keystore usage, aborted");
+                Log.e(TAG, "Exception: " + e.getMessage());
+                lastErrorMessage = "Exception: " + e.getMessage();
+                return null;
+            }
+        }
+    }
+
+    public byte[] readPublicAsymmetricKey(byte keyNumber) {
+        Log.d(TAG, "readPublicAsymmetricKey");
+        if (isAndroidSdkVersionTooLow) {
+            Log.e(TAG, "The minimum Android SDK version is below 23 (M), aborted");
+            lastErrorMessage = "The minimum Android SDK version is below 23 (M), aborted";
+            return null;
+        }
+        // build alias name
+        StringBuilder sb = new StringBuilder();
+        sb.append(aymmetricKeyAlias);
+        sb.append(keyNumber);
+        String alias = sb.toString();
+        Log.d(TAG, "readKey, alias: " + alias);
+        boolean keystorePasswordAvailable = getKeystorePasswordBytes();
+        if (!keystorePasswordAvailable) {
+            Log.e(TAG, "No keystorePassword present, aborted: " + keystoreFileName);
+            lastErrorMessage = "No keystorePassword present, aborted: " + keystoreFileName;
+            return null;
+        }
+        if (!isFilePresent(keystoreFileName)) {
+            Log.d(TAG, "No keystoreFile present, aborted: " + keystoreFileName);
+            lastErrorMessage = "No keystoreFile present, aborted: " + keystoreFileName;
+            return null;
+        } else {
+            try {
+                KeyStore keyStore = KeyStore.getInstance(keystoreType, "BC");
+                FileInputStream fileInputStream = context.openFileInput(keystoreFileName);
+                keyStore.load(fileInputStream, keystorePassword);
+                //Creating the KeyStore.ProtectionParameter object
+                KeyStore.ProtectionParameter protectionParam = new KeyStore.PasswordProtection(keystorePassword);
+                KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry(alias, protectionParam);
+                // Creating SecretKey object
+                if (privateKeyEntry == null) {
+                    Log.e(TAG, "no entry found, aborted");
+                    lastErrorMessage = "no entry found, aborted";
+                    return null;
+                }
+                Log.d(TAG, "Algorithm used to generate key : " + privateKeyEntry.getCertificate().getPublicKey().getAlgorithm());
+                byte[] retrievedKey = privateKeyEntry.getCertificate().getPublicKey().getEncoded();
+                lastErrorMessage = "success";
+                return retrievedKey;
+            } catch (IOException | GeneralSecurityException e) {
+                Log.e(TAG, "Exception on keystore usage, aborted");
+                Log.e(TAG, "Exception: " + e.getMessage());
+                lastErrorMessage = "Exception: " + e.getMessage();
+                return null;
+            }
+        }
+    }
+
+    /**
+     * Generates a self signed certificate.
+     *
+     * @param keyPair used for signing the certificate
+     * @return self-signed X509Certificate
+     * Source: https://github.com/misterpki/generate-keystore/blob/main/src/main/java/com/misterpki/KeyStoreGen.java
+     */
+    private X509Certificate generateX509CertificateRsa(final KeyPair keyPair)
+            throws OperatorCreationException, CertificateException, CertIOException
+    {
+        Log.d(TAG, "generate X509 Certificate (RSA)");
+        final Instant now = Instant.now();
+        final Date notBefore = Date.from(now);
+        final Date notAfter = Date.from(now.plus(Duration.ofDays(1)));
+
+        final ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256WithRSA").build(keyPair.getPrivate());
+        final String dn = "CN=asymm-cn";
+
+        final X500Name x500Name = new X500Name(RFC4519Style.INSTANCE, dn);
+        final X509v3CertificateBuilder certificateBuilder =
+                new JcaX509v3CertificateBuilder(x500Name,
+                        BigInteger.valueOf(now.toEpochMilli()),
+                        notBefore,
+                        notAfter,
+                        x500Name,
+                        keyPair.getPublic())
+                        .addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
+
+        return new JcaX509CertificateConverter()
+                .setProvider(new BouncyCastleProvider()).getCertificate(certificateBuilder.build(contentSigner));
+    }
+
+    private X509Certificate generateX509CertificateEcdsa(final KeyPair keyPair)
+            throws OperatorCreationException, CertificateException, CertIOException
+    {
+        Log.d(TAG, "generate X509 Certificate (ECDSA)");
+        final Instant now = Instant.now();
+        final Date notBefore = Date.from(now);
+        final Date notAfter = Date.from(now.plus(Duration.ofDays(1)));
+
+        final ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256WithECDSA").build(keyPair.getPrivate());
+        final String dn = "CN=asymm-cn";
+
+        final X500Name x500Name = new X500Name(RFC4519Style.INSTANCE, dn);
+        final X509v3CertificateBuilder certificateBuilder =
+                new JcaX509v3CertificateBuilder(x500Name,
+                        BigInteger.valueOf(now.toEpochMilli()),
+                        notBefore,
+                        notAfter,
+                        x500Name,
+                        keyPair.getPublic())
+                        .addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
+
+        return new JcaX509CertificateConverter()
+                .setProvider(new BouncyCastleProvider()).getCertificate(certificateBuilder.build(contentSigner));
+    }
 
     /**
      * section for files

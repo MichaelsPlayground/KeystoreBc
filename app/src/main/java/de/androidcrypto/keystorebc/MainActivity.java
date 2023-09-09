@@ -30,7 +30,10 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.PrivateKey;
 import java.security.Provider;
+import java.security.PublicKey;
 import java.security.Security;
 import java.util.Arrays;
 
@@ -91,17 +94,68 @@ public class MainActivity extends AppCompatActivity {
                             keystoreBc.initialize(passphrase);
                         }
 
+                        Log.d(TAG, "working with SYMMETRIC keys");
                         byte[] symmetricKey = "1234567890123456".getBytes(StandardCharsets.UTF_8);
                         byte keyNumber = (byte) 0x01;
                         boolean success = keystoreBc.storeSymmetricKey(keyNumber, symmetricKey);
                         Log.d(TAG, "store key: " + success);
                         if (!success) return;
                         byte[] symmetricKeyLoad = keystoreBc.readSymmetricKey(keyNumber);
+                        Log.d(TAG, printData("symmetricKeyOrg ", symmetricKey));
+                        Log.d(TAG, printData("symmetricKeyLoad", symmetricKeyLoad));
                         if (Arrays.equals(symmetricKey, symmetricKeyLoad)) {
                             Log.d(TAG, "write and read symmetric keys are equals");
                         } else {
                             Log.d(TAG, "write and read symmetric keys are NPT equals");
                         }
+
+                        // now working with asymmetric keys
+                        Log.d(TAG, "working with ASYMMETRIC keys");
+                        Cryptography cryptography = new Cryptography();
+                        KeyPair keyPair = cryptography.generateAnEcdsaKeypair();
+                        PrivateKey privateKey = cryptography.getEcPrivateKeyFromKeyPair(keyPair);
+                        PublicKey publicKey = cryptography.getEcPublicKeyFromKeyPair(keyPair);
+                        byte[] privateKeyEncoded = cryptography.getEcPrivateKeyEncoded(privateKey);
+                        byte[] publicKeyEncoded = cryptography.getEcPublicKeyEncoded(publicKey);
+                        Log.d(TAG, printData("private key encoded", privateKeyEncoded));
+                        Log.d(TAG, printData("public  key encoded", publicKeyEncoded));
+
+                        // store the keyPair
+                        byte asymmetricKeyNumber = (byte) 0x02;
+                        success = keystoreBc.storeAsymmetricKeyEcdsa(asymmetricKeyNumber, keyPair);
+                        Log.d(TAG, "store key: " + success);
+                        if (!success) return;
+
+                        // load the keyPair
+                        byte[] privateAsymmetricKeyLoad = keystoreBc.readPrivateAsymmetricKeyEcdsa(asymmetricKeyNumber);
+                        Log.d(TAG, printData("private asymmetricKeyOrg ", privateKeyEncoded));
+                        Log.d(TAG, printData("private asymmetricKeyLoad", privateAsymmetricKeyLoad));
+                        if (Arrays.equals(privateKeyEncoded, privateAsymmetricKeyLoad)) {
+                            Log.d(TAG, "write and read asymmetric PRIVATE keys are equals");
+                        } else {
+                            Log.d(TAG, "write and read symmetric PRIVATE keys are NOT equals");
+                        }
+                        byte[] publicAsymmetricKeyLoad = keystoreBc.readPublicAsymmetricKey(asymmetricKeyNumber);
+                        Log.d(TAG, printData("public asymmetricKeyOrg ", privateKeyEncoded));
+                        Log.d(TAG, printData("public asymmetricKeyLoad", privateAsymmetricKeyLoad));
+                        if (Arrays.equals(publicKeyEncoded, publicAsymmetricKeyLoad)) {
+                            Log.d(TAG, "write and read asymmetric PUBLIC keys are equals");
+                        } else {
+                            Log.d(TAG, "write and read symmetric PUBLIC keys are NOT equals");
+                        }
+
+                        // run a signature process with loaded keys
+                        PrivateKey privateKeyRestored = cryptography.getEcPrivateKeyFromEncoded(privateAsymmetricKeyLoad);
+                        PublicKey publicKeyRestored = cryptography.getEcPublicKeyFromEncoded(publicAsymmetricKeyLoad);
+                        byte[] message = "The quick brown fox jumps over the lazy dog".getBytes(StandardCharsets.UTF_8);
+                        byte[] signature = cryptography.signAMessageEcdsa(privateKeyRestored, message);
+                        boolean verification = cryptography.verifyAMessageEcdsa(publicKeyRestored, message, signature);
+                        Log.d(TAG, printData("message", message));
+                        Log.d(TAG, printData("signature", signature));
+                        Log.d(TAG, "The signature is verified: " + verification);
+
+
+
                         break;
                     }
 
@@ -516,5 +570,25 @@ public class MainActivity extends AppCompatActivity {
 
     private static String base64ToHex(String base64String) {
         return bytesToHex(base64Decoding(base64String));
+    }
+
+    public static String printData(String dataName, byte[] data) {
+        int dataLength;
+        String dataString = "";
+        if (data == null) {
+            dataLength = 0;
+            dataString = "IS NULL";
+        } else {
+            dataLength = data.length;
+            dataString = bytesToHex(data);
+        }
+        StringBuilder sb = new StringBuilder();
+        sb
+                .append(dataName)
+                .append(" length: ")
+                .append(dataLength)
+                .append(" data: ")
+                .append(dataString);
+        return sb.toString();
     }
 }

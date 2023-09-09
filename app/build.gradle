@@ -23,6 +23,9 @@ android {
         }
     }
     compileOptions {
+        // Flag to enable support for the new language APIs, important for timestamps
+        coreLibraryDesugaringEnabled true
+
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
@@ -39,7 +42,11 @@ dependencies {
 
     // https://mvnrepository.com/artifact/org.bouncycastle/bcprov-jdk18on
     implementation group: 'org.bouncycastle', name: 'bcprov-jdk18on', version: '1.72'
+    implementation group: 'org.bouncycastle', name: 'bcpkix-jdk18on', version: '1.72'
 
     // for encrypted shared preferences
     implementation 'androidx.security:security-crypto:1.0.0'
+
+    // important for timestamps
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.3'
 }
